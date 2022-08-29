@@ -1,0 +1,183 @@
+import requests
+import json
+from config import cookies,headers
+import os
+import math
+import datetime
+
+
+
+
+def get_data():
+
+
+
+  params = {
+      'categoryId': '186',
+      'offset': '0',
+      'limit': '24',
+      'filterParams': 'WyJ0b2xrby12LW5hbGljaGlpIiwiLTEyIiwiZGEiXQ==',
+      'doTranslit': 'true',
+   }
+  if not os.path.exists('pars_data'):
+      os.mkdir('pars_data')
+
+  s = requests.Session()
+  response = s.get('https://www.mvideo.ru/bff/products/listing', params=params, cookies=cookies, headers=headers).json()
+
+  total_items = response.get('body').get('total')
+
+  if total_items is None:
+      return '[!] No item :('
+
+  pages_count = math.ceil(total_items / 24)
+
+  product_ids = {}
+  product_description = {}
+  product_prices = {}
+
+  for i in range(pages_count):
+      offset = f'{i*24}'
+
+      params = {
+          'categoryId': '186',
+          'offset': offset,
+          'limit': '24',
+          'filterParams': 'WyJ0b2xrby12LW5hbGljaGlpIiwiLTEyIiwiZGEiXQ==',
+          'doTranslit': 'true',
+      }
+      response = s.get('https://www.mvideo.ru/bff/products/listing', params=params, cookies=cookies,
+                       headers=headers).json()
+
+      product_id_list = response.get('body').get('products')
+      product_ids[i] = product_id_list
+
+
+      json_data = {
+          'productIds': product_id_list,
+          'mediaTypes': [
+              'images',
+          ],
+          'category': True,
+          'status': True,
+          'brand': True,
+          'propertyTypes': [
+              'KEY',
+          ],
+          'propertiesConfig': {
+              'propertiesPortionSize': 5,
+          },
+          'multioffer': False,
+      }
+
+      response = s.post('https://www.mvideo.ru/bff/product-details/list', cookies=cookies, headers=headers,
+                           json=json_data).json()
+
+      product_description[i] = response
+
+      product_id_str = ','.join(product_id_list)
+
+
+      params = {
+          'productIds': product_id_str,
+          'addBonusRubles': 'true',
+          'isPromoApplied': 'true',
+      }
+
+      response = s.get('https://www.mvideo.ru/bff/products/prices', params=params, cookies=cookies,
+                          headers=headers).json()
+
+
+
+      item_prices = {}
+
+      material_prices = response.get('body').get('materialPrices')
+
+      for item in material_prices:
+
+          try:
+              item_id = item.get('price').get('productId')
+              item_base_price = item.get('price').get('basePrice')
+              item_sale_price = item.get('price').get('salePrice')
+              item_bonus = item.get('bonusRubles').get('total')
+              item_discount_all = item.get('price').get('discounts')[0]
+              item_discount_name = item_discount_all.get('promoName')
+              item_discount = item_discount_all.get('discount')
+
+              product_prices[item_id] = {
+                  'item_base_price': item_base_price,
+                  'item_sale_price': item_sale_price,
+                  'item_bonus': item_bonus,
+                  'item_discount_name': item_discount_name,
+                  'item_discount': item_discount
+              }
+
+
+
+          except:
+              item_id = item.get('price').get('productId')
+              item_base_price = item.get('price').get('basePrice')
+              item_sale_price = item.get('price').get('salePrice')
+              item_bonus = item.get('bonusRubles').get('total')
+              item_discount_name = 0
+              item_discount = 0
+              product_prices[item_id] = {
+                  'item_base_price': item_base_price,
+                  'item_sale_price': item_sale_price,
+                  'item_bonus': item_bonus,
+                  'item_discount_name': item_discount_name,
+                  'item_discount': item_discount
+              }
+      print(f'[+] Finished {i +1} of the {pages_count} pages')
+
+  with open('pars_data/1_products_ids.json', 'w') as file:
+      json.dump(product_ids, file, indent=4, ensure_ascii=False)
+
+  with open('pars_data/2_products_description.json', 'w') as file:
+      json.dump(product_description, file, indent=4, ensure_ascii=False)
+
+  with open('pars_data/3_products_prices.json', 'w') as file:
+      json.dump(product_prices, file, indent=4,ensure_ascii=False)
+
+def result():
+
+    now = datetime.datetime.now()
+    data = now.strftime("%d-%m-%Y")
+
+    with open('pars_data/2_products_description.json') as file:
+        products_data = json.load(file)
+
+    with open('pars_data/3_products_prices.json') as file:
+        products_prices = json.load(file)
+
+    for items in products_data.values():
+        products = items.get('body').get('products')
+
+
+
+        for item in products:
+            product_id = item.get('productId')
+            prices = products_prices[product_id]
+            # if product_id in products_prices:
+            #         print('sravnenie ', product_id)
+            #         prices = products_prices[product_id]
+        #
+            item['item_base_price'] = prices.get('item_base_price')
+            item['item_sale_price'] = prices.get('item_sale_price')
+            item['item_bonus'] = prices.get('item_bonus')
+            item['item_discount_name'] = prices.get('item_discount_name')
+            item['item_discount'] = prices.get('item_discount')
+            item['item_link'] = f'https://www.mvideo.ru/products/{item.get("nameTranslit")}-{product_id}'
+    #
+    #
+    with open(f'pars_data/Data_result{data}.json', 'w') as file:
+        json.dump(products_data, file, indent=4,ensure_ascii=False)
+
+
+
+
+
+
+if __name__ == '__main__':
+    get_data()
+    result()
